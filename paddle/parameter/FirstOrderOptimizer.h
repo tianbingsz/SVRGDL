@@ -49,9 +49,8 @@ public:
 };
 
 /**
- *SVRG, stochastic variance reduction optimization.
- *http://papers.nips.cc/paper/4937-accelerating-
- *stochastic-gradient-descent-using-predictive-variance-reduction.pdf
+ * SVRG, stochastic variance reduction optimization.
+ * http://papers.nips.cc/paper/4937-accelerating-stochastic-gradient-descent-using-predictive-variance-reduction.pdf
 */
 class SvrgOptimizer : public SgdOptimizer {
 public:
@@ -73,7 +72,7 @@ public:
     auto eta = learningRate_ * paraConfig.learning_rate();
     vecs[PARAMETER_VALUE]->svrgUpdate(
             *vecs[PARAMETER_GRADIENT], *vecs[PARAMETER_GRADIENT_SUM],
-            eta, optConfig_.batch_rate()*eta,
+            eta, optConfig_.batch_rate() * eta,
             applyDecay_ ? paraConfig.decay_rate() : 0);
   }
 };

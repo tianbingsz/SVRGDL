@@ -73,11 +73,11 @@ public:
 
   /**
    * Train until num_passes reached.
-   * One pass means neural network train through all training data.
+   * One pass means neural network trains through all training data.
    *
    * @param numPasses the number of traning pass.
    * @note Durning neural network training, the num passes may set a very large
-   * value, and kill training process when result is good enough.
+   * value, and kill training process when the result is good enough.
    */
   virtual void train(size_t numPasses = (size_t)FLAGS_num_passes);
 

@@ -34,8 +34,7 @@ void VRRemoteParameterUpdater::init(std::vector<ParameterPtr>& parameters) {
     cpuParameters_ = parameters;
   } else {
     for (auto& parameter : parameters) {
-      cpuParameters_.emplace_back(new Parameter(parameter->getConfig(),
-                                                /* useGpu= */ false));
+      cpuParameters_.emplace_back(new Parameter(parameter->getConfig(), false));
       cpuParameters_.back()->setID(parameter->getID());
       cpuParameters_.back()->enableType(PARAMETER_GRADIENT_SUM);
       cpuParameters_.back()->enableType(PARAMETER_SNAPSHOT_VALUE);
@@ -51,14 +50,12 @@ void VRRemoteParameterUpdater::init(std::vector<ParameterPtr>& parameters) {
     copyParametersFromDevice(PARAMETER_VALUE);
     parameterClient_->setParameter();
     parameterClient_->setStatus(PSERVER_STATUS_PARAMETER_READY);
+    startController();
+    useApplyInPserver_ = useApplyInPserver(config_);
   } else {
     parameterClient_->waitForStatus(PSERVER_STATUS_PARAMETER_READY);
     parameterClient_->getParameter();
     copyParametersToDevice(PARAMETER_VALUE);
-  }
-  if (FLAGS_trainer_id == 0) {
-    startController();
-    useApplyInPserver_ = useApplyInPserver(config_);
   }
 }
 
@@ -84,10 +81,7 @@ void VRRemoteParameterUpdater::controller() {
        PServerVector grad = { PARAMETER_GRADIENT };
        PServerVector gradSum = { PARAMETER_GRADIENT_SUM };
        ops.addOperation(PSERVER_OP_COPY_ZERO, grad, gradSum);
-       client.doOperation(ops,
-                         /* waitForGradient= */ true,
-                         /* sendBackarameter= */ true,
-                         /* releasePass= */ false);
+       client.doOperation(ops, true, true, false);
     }
 
     /*start pass for each mini-batch*/ {
@@ -95,18 +89,12 @@ void VRRemoteParameterUpdater::controller() {
 
       PreparedOperations ops;
       ops.addOperation(PSERVER_OP_START_PASS);
-      client.doOperation(ops,
-                         /* waitForGradient= */ false,
-                         /* sendBackarameter= */ false,
-                         /* releasePass= */ false);
+      client.doOperation(ops, false, false, false);
     }
     while (true) {
       PreparedOperations ops;
       ops.addOperation(PSERVER_OP_SGD);
-      client.doOperation(ops,
-                         /* waitForGradient= */ true,
-                         /* sendBackarameter= */ true,
-                         /* releasePass= */ false);
+      client.doOperation(ops, true, true, false);
       if (client.isPassFinish()) {
         break;
       }
@@ -115,14 +103,10 @@ void VRRemoteParameterUpdater::controller() {
     /*finish pass*/ {
       PreparedOperations ops;
       ops.addOperation(PSERVER_OP_FINISH_PASS);
-      client.doOperation(ops,
-                         /* waitForGradient= */ true,
-                         /* sendBackarameter= */ true,
-                         /* releasePass= */ true);
+      client.doOperation(ops, true, true, true);
     }
 
-    passCount_++;
-    if (passCount_ == expectedPassCount_) {
+    if (++passCount_ == expectedPassCount_) {
       break;
     }
   }
@@ -135,10 +119,10 @@ void VRRemoteParameterUpdater::finishBatch(real cost) {
   {
     REGISTER_TIMER("sendAndRecv_dense");
     parameterClient_->sendAndReceiveParameter(PSERVER_UPDATE_MODE_ADD_GRADIENT,
-                                              PARAMETER_GRADIENT,/*sendType*/
+                                              PARAMETER_GRADIENT, // sendType
                                               batchSize_,
                                               0,  // cost = 0
-                                              true/*sendBackParameter*/);
+                                              true // sendBackParameter);
   }
 
   copyParametersToDevice(PARAMETER_VALUE);

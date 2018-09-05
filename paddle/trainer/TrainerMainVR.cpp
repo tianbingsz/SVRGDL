@@ -35,6 +35,7 @@ using namespace paddle;  // NOLINT
 
 int main(int argc, char** argv) {
   // write logs instantly (never buffer log messages)
+
 #ifdef PADDLE_USE_GLOG
   FLAGS_logbuflevel = -1;
 #endif
@@ -55,7 +56,7 @@ int main(int argc, char** argv) {
         if (FLAGS_rdma_tcp == "rdma") {
           pservers[i].reset(
               new ParameterServer2(std::string(), FLAGS_port + i, rdmaCpu++));
-          rdmaCpu = rdmaCpu % onlineCpus;
+          rdmaCpu %= onlineCpus;
         } else {
           pservers[i].reset(
               new ParameterServer2(std::string(), FLAGS_port + i));
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
           if (FLAGS_rdma_tcp == "rdma") {
             pservers[i * devices.size() + j].reset(new ParameterServer2(
                 getIpAddr(devices[j]), FLAGS_port + i, rdmaCpu++));
-            rdmaCpu = rdmaCpu % onlineCpus;
+            rdmaCpu %= onlineCpus;
           } else {
             pservers[i * devices.size() + j].reset(
                 new ParameterServer2(getIpAddr(devices[j]), FLAGS_port + i));
