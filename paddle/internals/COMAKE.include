@@ -1,0 +1,7 @@
+#edit-mode: -*- python -*-
+
+if WITH_METRIC:
+    execfile('internals/metric_learning/COMAKE.include')
+    execfile('internals/dserver/COMAKE.include') 
+    Directory('internals/dserver/test', Depends(PADDLE_LIBS))
+    Directory('internals/metric_learning/test', Depends(PADDLE_LIBS))

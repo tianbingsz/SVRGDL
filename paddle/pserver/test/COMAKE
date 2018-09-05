@@ -1,0 +1,43 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#工作路径.
+WORKROOT('../../../../..')
+
+#使用硬链接copy.
+CopyUsingHardLink(True)
+
+PADDLE_ROOT = '../../'
+execfile('../../common_COMAKE')
+
+#头文件路径.
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../..")
+
+Application('socket_test',
+    Sources(
+    'SocketTest.cpp',
+     Depends(PADDLE_LIBS),
+    ),
+    Libraries(PADDLE_LIBS),
+)
+
+Application('test_ProtoServer',
+    Sources(
+    'test_ProtoServer.cpp',
+     Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs()
+)
+
+Application('test_ParameterServer2',
+    Sources(
+    'test_ParameterServer2.cpp',
+     Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs()
+)

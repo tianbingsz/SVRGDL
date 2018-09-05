@@ -1,0 +1,413 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#hard copy.
+CopyUsingHardLink(True)
+
+import os
+import subprocess
+import sys
+
+def perror(msg):
+    print >> sys.stderr, msg
+    sys.exit(1)
+
+def env2bool(envname, default='n'):
+    s = os.environ.get(envname, default)
+    if s.lower() in ['t', 'true', 'y', 'yes', '1']:
+        return True
+    elif s.lower() in ['f', 'false', 'n', 'no', '0']:
+        return False
+    else:
+        perror("Environment Variable '%s' is not recognized, which is '%s'" % (envname, s))
+
+def env2accuracy(envname, default='f'):
+    s = os.environ.get(envname, default)
+    if s.lower() in ['f', 'float']:
+        return "FLOAT"
+    elif s.lower() in ['d', 'double']:
+        return "DOUBLE"
+    else:
+        perror("Environment Variable '%s' is not recognized, which is '%s'" % (envname, s))
+
+# version info
+PADDLE_MAJOR_VERSION = '0'
+PADDLE_MINOR_VERSION = '8'
+PADDLE_PATCH_VERSION = '0b0'
+
+PADDLE_VERSION = '.'.join((PADDLE_MAJOR_VERSION,
+                           PADDLE_MINOR_VERSION,
+                           PADDLE_PATCH_VERSION))
+
+
+#support dynamic load libs
+USE_DSO = env2bool('PADDLE_USE_DSO', "t")
+USE_GPERF = env2bool('PADDLE_USE_GPERF')
+ONLYCPU = env2bool('PADDLE_ONLYCPU')
+ENABLERDMA = env2bool('PADDLE_ENABLE_RDMA')
+USETOOLCHAIN = env2bool('PADDLE_USETOOLCHAIN')
+ACCURACY = env2accuracy('PADDLE_ACCURACY')
+ONLINE = env2bool('PADDLE_ONLINE')
+NOAVX = env2bool('PADDLE_NOAVX')
+USE_MKL = env2bool('PADDLE_USE_MKL', "t")
+if ONLINE:
+    NOAVX = True
+NOEXTENSION = env2bool('PADDLE_NOEXTENSION')
+HIGH_VERSION_GCC = env2bool('PADDLE_HIGH_VERSION_GCC')
+MKLTHREAD = env2bool('PADDLE_MKL_MULTI_THREAD')
+WITH_METRIC = env2bool('PADDLE_WITH_METRIC_LEARNING', "f")
+WITH_STYLECHECK = env2bool("PADDLE_WITH_STYLE_CHECK", "t")
+WITH_GLOG = env2bool("PADDLE_USE_GLOG", "t")
+WITH_CCACHE = env2bool("PADDLE_USE_CCACHE", "t")
+WITH_GFLAGS = env2bool("PADDLE_USE_GFLAGS", 'f')
+WITH_TIMER = env2bool('PADDLE_WITH_TIMER')
+#USE FPGA support
+USEFPGA = env2bool('PADDLE_USEFPGA')
+
+if os.system("ccache --help 1>/dev/null 2>/dev/null") != 0:
+    if WITH_CCACHE:
+        print >> sys.stderr, 'Disable ccache because it cannot be found in PATH'
+        WITH_CCACHE = False
+
+if HIGH_VERSION_GCC and USETOOLCHAIN:
+    perror("It is no need to use toolchain when use high version gcc")
+
+print 'PADDLE_USE_DSO', USE_DSO
+print 'PADDLE_USE_GPERF', USE_GPERF
+print 'PADDLE_ACCURACY : ', ACCURACY
+print 'PADDLE_ONLYCPU :  ', ONLYCPU
+print 'PADDLE_ENABLE_RDMA :  ', ENABLERDMA
+print 'PADDLE_USETOOLCHAIN :  ', USETOOLCHAIN
+print 'PADDLE_ONLINE :   ', ONLINE
+print 'PADDLE_NOAVX :   ', NOAVX
+print 'PADDLE_NOEXTENSION :  ', NOEXTENSION
+print 'PADDLE_USEFPGA :  ', USEFPGA
+print 'PADDLE_HIGH_VERSION_GCC: ', HIGH_VERSION_GCC
+print 'PADDLE_MKL_MULTI_THREAD: ', MKLTHREAD
+print "PADDLE_WITH_STYLE_CHECK: ", WITH_STYLECHECK
+print "PADDLE_WITH_METRIC_LEARNING: ", WITH_METRIC
+print 'PADDLE_WITH_TIMER : ', WITH_TIMER
+print 'PADDLE_USE_MKL : ', USE_MKL
+
+if ONLYCPU:
+  NOPYTHON = not env2bool('PADDLE_WITH_PYTHON', 'no')
+else:
+  # In GPU, Default include python interpreter.
+  NOPYTHON = not env2bool('PADDLE_WITH_PYTHON', 'yes')
+
+if not NOPYTHON and USETOOLCHAIN:
+  perror("PADDLE_WITH_PYTHON should not USE_TOOLCHAIN")
+
+print 'PADDLE_NOPYTHON :   ', NOPYTHON
+
+WITH_SWIG = env2bool('PADDLE_WITH_SWIG')
+if WITH_SWIG:
+  # CHECK SWIG ENV
+  retv = os.system("swig --help > /dev/null")
+  if retv == 0:
+    if not NOPYTHON:
+      perror('You need to disable PyDataProvider support, when use SWIG')
+  else:
+    perror('You need to install swig, when enable PADDLE_WITH_SWIG.')
+
+print 'PADDLE_WITH_SWIG : ', WITH_SWIG
+
+if 'PADDLE_ROOT' not in locals():
+    PADDLE_ROOT = './'
+
+if HIGH_VERSION_GCC:
+    high_version_gcc_path = os.environ.get("PADDLE_HIGH_VERSION_GCC_PATH", "/opt/compiler/gcc-4.8.2")
+    CC('%s/bin/gcc' % high_version_gcc_path)
+    CXX('%s/bin/g++' % high_version_gcc_path)
+    LDFLAGS(" -L%s/lib " % high_version_gcc_path)
+
+PLAIN_CC = env.Cc()
+PLAIN_CXX = env.Cxx()
+
+# Then add ccache
+if WITH_CCACHE:
+    import Environment
+    env = Environment.GetCurrent()
+    old_cc = env.Cc()
+    old_cxx = env.Cxx()
+    CC(' '.join(['ccache', old_cc]))
+    CXX(' '.join(['ccache', old_cxx]))
+
+if USE_MKL:
+  BLAS_ROOT = os.path.join(PADDLE_ROOT, 'internals/mkl')
+else:
+  BLAS_ROOT = os.path.join(PADDLE_ROOT, 'internals/cblas')
+
+# add paddle version
+def get_version():
+    if os.environ.get('PADDLE_VERSION'):
+        return os.environ.get('PADDLE_VERSION')
+    if os.path.exists('./.svn/'):
+        version = os.popen('svn info | grep \"Revision\" | awk \'{print $2}\'').read().strip()
+        return version
+    return 'unknown'
+
+#C预处理器参数.
+CPPFLAGS('-D_GNU_SOURCE -D__STDC_LIMIT_MACROS -DVERSION=\\\"1.9.8.7\\\"'
+         + (' -DWITH_GOOGLE_PERFTOOLS' if USE_GPERF else '')
+         + (' -DPADDLE_TYPE_DOUBLE -DHPPL_TYPE_DOUBLE' if ACCURACY == 'DOUBLE' else '')
+         + (' -DPADDLE_ONLY_CPU -DHPPL_STUB_FUNC' if ONLYCPU else '')
+         + (' -DPADDLE_METRIC_LEARNING' if WITH_METRIC else '')
+         + (' -DPADDLE_NO_PYTHON' if NOPYTHON else '')
+         + (' -DPADDLE_DISABLE_RDMA' if not ENABLERDMA else '')
+         + (' -DPADDLE_ON_LINE' if ONLINE else '')
+         + (' -DPADDLE_DISABLE_TIMER' if not WITH_TIMER else '')
+         + (' -DPADDLE_USE_GLOG' if WITH_GLOG else '')
+         + (' -DPADDLE_USE_GFLAGS' if WITH_GFLAGS else '')
+         + (' -DPADDLE_USE_FPGA' if USEFPGA else '')
+         + (' -DPADDLE_USE_DSO' if USE_DSO else '')
+         + (' -DPADDLE_USE_MKL' if USE_MKL else '')
+         + (' -DPADDLE_VERSION=' + '\\\"' + get_version() + '\\\"'))
+
+
+def disable_gcc_error(opt):
+    import subprocess
+    import Environment
+    env = Environment.GetCurrent()
+    if subprocess.call('%s --help=warnings | grep W%s > /dev/null' % (env.Cc(), opt),
+                       shell=True) == 0:
+        return ' -Wno-error=' + opt
+    else:
+        return ''
+
+# Enable most warnings (-Wall -Wextra) and treat them as errors (-Werror)
+# except for unused-parameter (-Wno-error=unused-parameter).
+# And inhibit warning messages (-w), which means that warning for
+# unused-parameter will not show up.
+diagnostic_flags = (' -Wall -Wextra -Wnon-virtual-dtor -Wno-unused-parameter -Werror'
+                    # The following warning is from "comlog/comlog.h"
+                    + disable_gcc_error('literal-suffix')
+                    # The following warning is from glog/logging.h LOG_EVERY_N
+                    + disable_gcc_error('unused-local-typedefs'))
+
+#C编译参数.
+CFLAGS('-g -pipe -fPIC -O3 -fno-omit-frame-pointer ' + diagnostic_flags +
+       (' -msse3' if NOAVX else ' -mavx') +
+       (' -fopenmp' if MKLTHREAD else ''))
+
+#C++编译参数.
+CXXFLAGS('-g -pipe -fPIC -O3 -std=c++0x -fno-omit-frame-pointer ' +
+         diagnostic_flags + (' -msse3' if NOAVX else ' -mavx'))
+
+#IDL编译参数
+IDLFLAGS('--language cxx --compack --astyle')
+
+#UBRPC编译参数
+UBRPCFLAGS('--language cxx --compack')
+
+RPATH_DIR = os.path.join(
+    PADDLE_ROOT, "x86_64-scm-linux-gnu/x86_64-scm-linux-gnu/lib/")
+metric_home = os.path.join(PADDLE_ROOT, 'metric_lib')
+fpga_home = os.path.join(PADDLE_ROOT, 'internals/fpga_output')
+
+python_home = os.environ.get('PYTHON_HOME', '/usr')
+python_version = os.environ.get('PYTHON_VERSION', '2.6')
+numpy_home = os.environ.get('NUMPY_HOME',
+            '/usr/lib64/python2.6/site-packages/numpy/core')
+# the default version needs to be validated and corrected
+if not os.path.exists(python_home + '/bin/python' + python_version):
+    # if the user provided python is not found or the python2.6 is not found
+    # a system independent way to retrieve the python version
+    import sys
+    python_version = `sys.version_info[0]` +'.'+ `sys.version_info[1]`
+    # a distribution independent way to retrieve the numpy install path
+if not os.path.exists(numpy_home):
+    try:
+        import numpy
+        numpy_home = os.path.dirname(numpy.__file__) + '/core'
+    except ImportError:
+        numpy_home = None
+
+print "python_version : %s" % python_version
+print "numpy_home : %s" % numpy_home
+
+cuda_home = os.environ.get('CUDA_HOME', '/usr/local/cuda')
+
+cudnn_home = os.environ.get('CUDNN_HOME', '/usr/local/cuda')
+
+#链接参数.
+LDFLAGS((' ' if ONLYCPU else ('' if USE_DSO
+        else ' -L%s/lib64 -lcudart_static -lcublas_static -lcurand_static -lculibos -L%s/lib64 -lcudnn_static' 
+        % (cuda_home, cudnn_home)) ) +
+        (' -L%s ' % PADDLE_ROOT) +
+        ((' -Xlinker -rpath %s -Xlinker --dynamic-linker=./ld-linux-x86-64.so.2' % RPATH_DIR) if USETOOLCHAIN else '') +
+        (' -L%s/lib ' % BLAS_ROOT) +
+        (' -lcblas -latlas ' if not USE_MKL else ((' -lmkl_intel_lp64 -lmkl_core -lm ') + 
+        (' -lmkl_sequential' if not MKLTHREAD else ' -lmkl_gnu_thread -fopenmp'))) +
+        (' -lprofiler' if USE_GPERF else '') +
+        (' -L%s/lib -lapi -lmatrix' % fpga_home if USEFPGA else ''))
+
+
+LDFLAGS('-pthread -lrt')
+LDFLAGS('-ldl -rdynamic')
+
+def get_cudnn_inc():
+    global cudnn_home
+    if os.path.isfile(os.path.join(cudnn_home, 'include', 'cudnn.h')):
+        return os.path.join(cudnn_home, 'include')
+    elif os.path.isfile(os.path.join(cudnn_home, 'cudnn.h')):
+        return cudnn_home
+    elif not ONLYCPU:
+        perror("Could not find cudnn.h in %s or %s/include" % (cudnn_home, cudnn_home))
+    else:
+        return cudnn_home
+
+INCPATHS(os.path.join(PADDLE_ROOT,  '../') +
+    " " + os.path.join(PADDLE_ROOT, 'proto/') + " " +
+    (' %s/include ' % cuda_home) +
+    (get_cudnn_inc()) +
+    (' %s/cuda/include' % PADDLE_ROOT) +
+    (' %s/include/dnn-lib' % fpga_home if USEFPGA else '') +
+    (' %s/include/dnn-api' % fpga_home if USEFPGA else '') +
+    (' %s/include' % BLAS_ROOT))
+
+# do not use /usr/lib64 directly for high gcc version
+def createRDMALibSymbol(name):
+    TARGET(name,
+        ShellCommands(
+            'mkdir -p librdma',
+            'ln -s -f /usr/lib64/libibverbs.so.1.0.0 librdma/libibverbs.so.1',
+            'ln -s -f /usr/lib64/libibverbs.so.1.0.0 librdma/libibverbs.so',
+            'ln -s -f /usr/lib64/librdmacm.so.1.0.0 librdma/librdmacm.so.1',
+            'ln -s -f /usr/lib64/librdmacm.so.1.0.0 librdma/librdmacm.so',
+        )
+    )
+
+if ENABLERDMA:
+    rdma_svn_home = PADDLE_ROOT + '../../../sys/ip/rdma/thirdparty'
+    INCPATHS(' %s/output/accelio %s/output/libevent %s/output/libnuma '
+    % (rdma_svn_home, rdma_svn_home, rdma_svn_home))
+    LIBS(('%s/output/accelio/libxio.a ' % rdma_svn_home),
+        ('%s/output/libevent/libevent.a ' % rdma_svn_home),
+        ('%s/output/libevent/libevent_core.a ' % rdma_svn_home),
+        ('%s/output/libevent/libevent_extra.a ' % rdma_svn_home),
+        ('%s/output/libevent/libevent_pthreads.a ' % rdma_svn_home),
+        ('%s/output/libnuma/libnuma.a ' % rdma_svn_home))
+
+    createRDMALibSymbol('infinibandDriver')
+    LDFLAGS('-L./librdma -libverbs -lrdmacm -Xlinker -rpath ./librdma')
+
+# For linux limit shebang length, the python-config in very deep directory may cannot run by shebang.
+# Use python interpretor explicitly.
+_py_conf_file = "%s/bin/python%s-config" % (python_home, python_version)
+with open(_py_conf_file, 'r') as fin:
+  _line = fin.readline().strip()
+  if _line.startswith('#!'):
+    _py_shell = _line[2:]
+  else:
+    _py_shell = "%s/bin/python%s" % (python_home, python_version)
+
+PYTHON_CFLAGS = os.popen("%s %s --includes" % (_py_shell, _py_conf_file)).read()
+if not NOPYTHON:
+    CXXFLAGS(" %s "%PYTHON_CFLAGS)
+    LDFLAGS(" %s " % os.popen("%s  %s --ldflags" % (_py_shell, _py_conf_file)).read())
+    INCPATHS(" %s/include " % numpy_home)
+
+PADDLE_LIBS = [
+    'libpaddle_grad_machine.a',
+    'libpaddle_pserver2_lib.a',
+    'libpaddle_network.a',
+    'libpaddle_parameter.a',
+    'libpaddle_internal_parameter.a',
+    'libpaddle_math.a',
+    'libpaddle_utils.a',
+    'libpaddle_proto.a',
+    'libpaddle_cuda.a',
+]
+
+if WITH_METRIC:
+    PADDLE_LIBS.append('libpaddle_dserver_lib.a')
+    PADDLE_LIBS.append('libpaddle_metric_learning_lib.a')
+
+if not ONLINE:
+    PADDLE_LIBS = ['libpaddle_trainer_lib.a'] + PADDLE_LIBS
+
+libcublas_for_metric_lib = ''
+if not ONLYCPU:
+    if WITH_METRIC:
+        PADDLE_LIBS.append('internals/metric_lib/libmetric.a')
+        libcublas_for_metric_lib = '-L%s/lib64 -lcublas -lcudart' % cuda_home
+
+if WITH_METRIC:
+    PADDLE_LIBS.append('internals/metric_lib/libmetric_cpu.a')
+
+def gen_paddle_libs_for_link(lib_root, libs):
+    global libcublas_for_metric_lib
+    links = []
+    whole_archives = []
+    for lib in libs:
+        if lib == 'libpaddle_grad_machine.a' or lib == "libpaddle_metric_learning_lib.a":
+            whole_archives.append(os.path.join(lib_root, lib))
+        else:
+            links.append(os.path.join(lib_root, lib))
+    link_str = ' '.join(links)
+    if whole_archives:
+        link_str += (
+                   ' -Wl,--whole-archive ' +
+                   ' '.join(whole_archives) +
+                   ' -Wl,--no-whole-archive')
+    link_str += ' ' + libcublas_for_metric_lib
+    return link_str
+
+PADDLE_LIBS_FOR_LINK = gen_paddle_libs_for_link(PADDLE_ROOT, PADDLE_LIBS)
+
+PADDLE_LIBS = ' '.join([os.path.join(PADDLE_ROOT, lib) for lib in PADDLE_LIBS])
+
+STATIC_LIB = [
+    'libpaddle_lib.a ',
+    'internals/gcc_static_lib/libstdc++.a ',
+    'internals/gcc_static_lib/libgcc_eh.a ',
+    'internals/mkl/lib/libmkl_intel_lp64.a ',
+    'internals/mkl/lib/libmkl_core.a ',
+    'internals/mkl/lib/libmkl_%s.a ' % ('sequential' if not MKLTHREAD else 'gnu_thread'),
+    '../../../third-64/protobuf/lib/libprotobuf-lite.a ',
+    '../../../third-64/protobuf/lib/libprotobuf.a ',
+    '../../../third-64/protobuf/lib/libprotoc.a ',
+    'fpga_output/lib/libmatrix.a ',
+    'fpga_output/lib/libapi.a '
+]
+if WITH_GLOG:
+    STATIC_LIB.append('../../../third-64/glog/lib/libglog.a ')
+
+if WITH_GFLAGS:
+    STATIC_LIB.append('../../../third-64/gflags/lib/libgflags.a ')
+    STATIC_LIB.append('../../../third-64/gflags/lib/libgflags_nothreads.a ')
+
+def gen_static_libs_for_link(lib_root, libs):
+    links = []
+    for lib in libs:
+        links.append(lib_root + lib)
+    link_str = ' '.join(links)
+    return link_str
+
+PADDLE_STATIC_LIB_FOR_LINK = gen_static_libs_for_link(PADDLE_ROOT, STATIC_LIB)
+
+def PaddleStaticLib(name, objs, libs, outputdir):
+    global PADDLE_STATIC_LIB_FOR_LINK
+    link_obj_str = ' '.join(objs)
+    link_lib_str = ' '.join(libs)
+    lib_name = 'lib' + name + '.a'
+    static_obj = name + '_static.o'
+    TARGET(
+        lib_name,
+        Depends(
+            PADDLE_STATIC_LIB_FOR_LINK,
+            link_obj_str,
+            link_lib_str
+        ),
+        ShellCommands('ld -r ' + link_obj_str +' --start-group '
+            + PADDLE_STATIC_LIB_FOR_LINK
+            + ' '
+            + link_lib_str
+            + ' --end-group -o ' + static_obj),
+        ShellCommands('ar crs ' + lib_name + ' ' + static_obj),
+        ShellCommands('mkdir -p ' + outputdir +
+                      ' && cp -f ' + lib_name + ' '+ outputdir),
+        CleanCommands('rm -rf ' + lib_name + ' && rm -rf ' + static_obj +
+                      ' && rm -rf ' + outputdir + '/' + lib_name)
+    )

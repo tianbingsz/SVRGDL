@@ -1,0 +1,22 @@
+def filter_file(callback):
+    import inspect
+    filename = inspect.getframeinfo(inspect.currentframe()).filename
+    path = os.path.dirname(os.path.abspath(filename))
+    _, _, filename = os.walk(path).next()
+    return filter(callback, filename)
+
+__srcs__ = map(lambda x: "math/"+x, 
+    filter_file(lambda x: x.endswith(".cpp")))
+__srcs__.append('math/BaseMatrix.o')
+
+StaticLibrary('paddle_math',
+   Sources(
+     *__srcs__
+   ),
+   Depends('libpaddle_proto.a'),
+   Depends('libpaddle_utils.a'),
+   Depends('math/BaseMatrix.o')
+)
+
+del __srcs__
+del filter_file

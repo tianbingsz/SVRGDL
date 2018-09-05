@@ -1,0 +1,604 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+import os
+import copy
+import Environment
+
+env = Environment.GetCurrent()
+
+def abspath_modified(path):
+    import traceback
+    callstack = ' '.join(traceback.format_stack())
+    if "realpath" in callstack:
+        #print "Using abspath"
+        return os.path.abspath_bak(path)
+    else:
+        #print "Using realpath"
+        return os.path.realpath(path)
+# This is a hack to fix the issues in comake2.
+# comake2 used abspath to determine the path of the include path, which
+# fails to resolve symbolic links. Changing it to realpath solves the issues.
+os.path.abspath_bak = copy.copy(os.path.abspath)
+os.path.abspath = abspath_modified
+
+WORKROOT('../../..')
+
+execfile('./common_COMAKE', globals())
+
+os.system('PADDLE_REAL_TYPE="%s" ' % ACCURACY.lower() + 
+          'bash internals/scripts/build_scripts/preprocess_proto.sh ')
+
+#依赖模块
+# The current glog lib is compiled without gflags.
+# Need to use environment variable to config glog,
+# prefixing the flag name with "GLOG_", e.g.
+# GLOG_logtostderr=1 ./executable
+# TODO: compile glog with gflags
+CONFIGS('third-64/gflags@base')
+CONFIGS('third-64/zlib@base')
+CONFIGS('sys/ip/rdma/sockrdmav1@trunk')
+CONFIGS('sys/ip/rdma/thirdparty@trunk',
+          Libraries('output/accelio/libxio.a'),
+          IncludePaths('output/accelio'))
+CONFIGS('third-64/glog@base')
+CONFIGS('third-64/protobuf@2.4.1.300')
+CONFIGS('thirdsrc/protobuf@2.4.1.300')
+CONFIGS('lib2-64/ullib@3.1.86.0')
+CONFIGS('app/ecom/fcr/model/cvm-reader@trunk@COMAKE',
+    Libraries('output/lib/libcvm-reader.a'),
+    IncludePaths('output/include'))
+
+proto_compiler = '../../../third-64/protobuf/bin/protoc'
+#proto_compiler='/usr/bin/protoc'
+PROTOC(proto_compiler)
+
+def ProtoPythonTarget(proto_file):
+    global proto_compiler
+    base = proto_file[ : proto_file.rfind('.proto')]
+    proto_dir = os.path.dirname(proto_file)
+    proto_out_dir = "../python/paddle/proto"
+    TARGET(
+        os.path.join(proto_out_dir, base + '_pb2.py'),
+        Depends(proto_file),
+        ShellCommands(
+            proto_compiler
+            + ' --proto_path=' + proto_dir
+            + ' --python_out=' + proto_out_dir
+            + ' ' + proto_file))
+    return os.path.join(proto_out_dir, base + '_pb2.py')
+
+
+py_proto_trgs = [ProtoPythonTarget('proto/ModelConfig.proto'),
+                ProtoPythonTarget('proto/ParameterConfig.proto'),
+                ProtoPythonTarget('proto/DataConfig.proto'),
+                ProtoPythonTarget('proto/TrainerConfig.proto'),
+                ProtoPythonTarget('proto/DataFormat.proto')]
+
+TARGET(
+    'copy_py_libs',
+    ShellCommands(
+        'mkdir -p output/pylib',
+        'cp -rf ../python/paddle output/pylib'
+    ),
+    Depends(*py_proto_trgs)
+)
+
+
+#库
+
+# protobuf python library
+TARGET(
+    'google',
+    ShellCommands(
+        'rm -rf google && '
+        'pushd ../../../thirdsrc/protobuf/protobuf-2.4.1/python && '
+        'python setup.py build --build-lib build/lib && '
+        'popd && '
+        'cp -R ../../../thirdsrc/protobuf/protobuf-2.4.1/python/build/lib/google .'
+    ),
+    ShellCommands(
+        'mkdir -p output/pylib',
+        'find ./google -name "*.py" | cpio -pdm output/pylib'
+    ))
+
+if ONLYCPU:
+    def CompileCPPFile(cpp_file):
+        global env
+        base = cpp_file[ : cpp_file.rfind('.cu')]
+        TARGET(
+            base + '.o',
+            Depends(cpp_file, 'libpaddle_proto.a'),
+            ShellCommands('%s -x c++ -c $(INCPATH) $(DEP_INCPATH) $(CPPFLAGS) $(CXXFLAGS) ' % env.Cxx()
+                + cpp_file
+                + ' -o ' + base + '.o'))
+
+    CompileCPPFile('math/BaseMatrix.cu')
+    CompileCPPFile('gserver/layers/LstmCompute.cu')
+    CompileCPPFile('gserver/layers/GruCompute.cu')
+else:
+    global cuda_home
+    NVCCFLAGS = (' -g -O3 -Xcompiler -fPIC --use_fast_math '
+        + ('' if NOAVX else ' -Xcompiler -mavx ')
+        + '-gencode arch=compute_30,code=sm_30 -gencode arch=compute_35,code=sm_35 '
+        + '-gencode arch=compute_35,code=sm_50 ')
+    def CompileNVCCFile(nvcc_file, plancxx):
+        global NVCCFLAGS
+        global cuda_home
+        base = nvcc_file[ : nvcc_file.rfind('.cu')]
+        TARGET(
+            base + '.o',
+            Depends(nvcc_file, 'libpaddle_proto.a'),
+            ShellCommands('%s/bin/nvcc -ccbin=%s -c $(INCPATH) $(DEP_INCPATH) $(CPPFLAGS) ' % (cuda_home, plancxx)
+                + NVCCFLAGS
+                + nvcc_file
+                + ' -o ' + base + '.o'))
+
+    CompileNVCCFile('math/BaseMatrix.cu', PLAIN_CXX)
+    CompileNVCCFile('gserver/layers/LstmCompute.cu', PLAIN_CXX)
+    CompileNVCCFile('gserver/layers/GruCompute.cu', PLAIN_CXX)
+
+execfile('./cuda/COMAKE.include')
+#Directory('hppl')
+#TARGET("libhppl.a",
+#    ShellCommands('cp --preserve=all hppl/libhppl.a .'),
+#    Depends('hppl'))
+
+StaticLibrary('paddle_proto',
+    Sources(
+        'proto/ParameterConfig.proto',
+        'proto/DataConfig.proto',
+    ) +
+    Sources(
+        'proto/ModelConfig.proto',
+        Depends(
+            'proto/ParameterConfig.proto',
+        )
+    ) +
+    Sources(
+        'proto/TrainerConfig.proto',
+        Depends(
+            'proto/DataConfig.proto',
+            'proto/ModelConfig.proto',
+        )
+    ) +
+    Sources(
+        'proto/ParameterService.proto',
+        Depends(
+            'proto/ParameterConfig.proto',
+            'proto/TrainerConfig.proto',
+        )
+    ) +
+    Sources(
+        'proto/DataFormat.proto',
+        Depends(
+            'proto/DataFormat.proto'
+        )
+    )
+)
+
+execfile("./utils/COMAKE.include")
+execfile("./math/COMAKE.include")
+execfile("./parameter/COMAKE.include")
+execfile("./internals/parameter/COMAKE.include")
+
+StaticLibrary('paddle_grad_machine',
+    Sources(
+        GLOB('gserver/extension/*.cpp') if (ACCURACY != 'DOUBLE' and not NOEXTENSION) else '',
+        'gserver/activations/ActivationFunction.cpp',
+        'gserver/layers/AddtoLayer.cpp',
+        'gserver/layers/AgentLayer.cpp',
+        'gserver/layers/AverageLayer.cpp',
+        'gserver/layers/BatchNormBaseLayer.cpp',
+        'gserver/layers/BatchNormalizationLayer.cpp',
+        'gserver/layers/EosIdCheckLayer.cpp',
+        'gserver/evaluators/ChunkEvaluator.cpp',
+        'gserver/evaluators/CTCErrorEvaluator.cpp',
+        'gserver/layers/ConcatenateLayer.cpp',
+        'gserver/layers/ContextProjection.cpp',
+        'gserver/layers/ConvBaseLayer.cpp',
+        'gserver/layers/ExpandConvLayer.cpp',
+        'gserver/layers/CudnnConvLayer.cpp' if not ONLYCPU else '',
+        'gserver/layers/CudnnPoolLayer.cpp' if not ONLYCPU else '',
+        'gserver/layers/CudnnBatchNormLayer.cpp' if not ONLYCPU else '',
+        'gserver/layers/PoolProjectionLayer.cpp',
+        'gserver/layers/NormProjectionLayer.cpp' if not ONLYCPU else '',
+        'gserver/layers/BlockExpandLayer.cpp',
+        'gserver/layers/CostLayer.cpp',
+        'gserver/layers/ConvOperator.cpp',
+        'gserver/layers/CosSimLayer.cpp',
+        'gserver/layers/CRFLayer.cpp',
+        'gserver/layers/CTCLayer.cpp',
+        'gserver/layers/CRFDecodingLayer.cpp',
+        'gserver/dataproviders/DataProvider.cpp',
+        'gserver/dataproviders/PyDataProvider2.cpp',
+        'gserver/layers/DataNormLayer.cpp',
+        'gserver/layers/DataLayer.cpp',
+        'gserver/evaluators/Evaluator.cpp',
+        'gserver/layers/FullMatrixProjection.cpp',
+        'gserver/layers/FullyConnectedLayer.cpp',
+        'gserver/layers/SelectiveFullyConnectedLayer.cpp',
+        'gserver/layers/GatedRecurrentLayer.cpp',
+        'gserver/layers/GruCompute.cpp',
+        'gserver/layers/GruCompute.o',
+        'gserver/layers/GruStepLayer.cpp',
+        'gserver/gradientmachines/GradientMachine.cpp',
+        'gserver/gradientmachines/GradientMachineMode.cpp',
+        'gserver/gradientmachines/ParallelNeuralNetwork.cpp',
+        'gserver/layers/ParameterReluLayer.cpp',
+        'gserver/layers/HierarchicalSigmoidLayer.cpp',
+        'gserver/layers/IdentityProjection.cpp',
+        'gserver/layers/Layer.cpp',
+        'gserver/layers/LinearChainCRF.cpp',
+        'gserver/layers/LinearChainCTC.cpp',
+        'gserver/layers/LstmLayer.cpp',
+        'gserver/layers/LstmCompute.cpp',
+        'gserver/layers/LstmCompute.o',
+        'gserver/layers/GetOutputLayer.cpp',
+        'gserver/layers/LstmStepLayer.cpp',
+        'gserver/dataproviders/MultiDataProvider.cpp',
+        'gserver/layers/MultiplexLayer.cpp',
+        'gserver/layers/MaxLayer.cpp',
+        'gserver/layers/ExpandLayer.cpp',
+        'gserver/layers/FeatureMapExpandLayer.cpp',
+        'gserver/layers/SequenceLastInstanceLayer.cpp',
+        'gserver/layers/SequenceConcatLayer.cpp',
+        'gserver/layers/SequenceReshapeLayer.cpp',
+        'gserver/layers/SubSequenceLayer.cpp',
+        'gserver/layers/ConvShiftLayer.cpp',
+        'gserver/layers/CosSimVecMatLayer.cpp',
+        'gserver/layers/PowerLayer.cpp',
+        'gserver/layers/ConvexCombinationLayer.cpp',
+        'gserver/layers/OuterProdLayer.cpp',
+        'gserver/layers/SlopeInterceptLayer.cpp',
+        'gserver/layers/ScalingLayer.cpp',
+        'gserver/layers/InterpolationLayer.cpp',
+        'gserver/layers/SumToOneNormLayer.cpp',
+        'gserver/layers/MaxIdLayer.cpp',
+        'gserver/layers/SequenceLastInstanceLayer.cpp',
+        'gserver/layers/SequenceConcatLayer.cpp',
+        'gserver/layers/MixedLayer.cpp',
+        'gserver/gradientmachines/MultiGradientMachine.cpp',
+        'gserver/gradientmachines/MultiNetwork.cpp',
+        'gserver/layers/MultinomialSampler.cpp',
+        'gserver/layers/NCELayer.cpp',
+        'gserver/gradientmachines/NeuralNetwork.cpp',
+        'gserver/layers/NormLayer.cpp' if not ONLYCPU else '',
+        'gserver/layers/PoolLayer.cpp',
+        'gserver/layers/Projection.cpp',
+        'gserver/dataproviders/ProtoDataProvider.cpp',
+        'gserver/dataproviders/PyDataProvider.cpp' if not NOPYTHON else '',
+        'gserver/layers/RecurrentLayer.cpp',
+        'gserver/layers/RecurrentLayerGroup.cpp',
+        'gserver/layers/SequenceToBatch.cpp',
+        'gserver/gradientmachines/RecurrentGradientMachine.cpp',
+        'gserver/layers/Operator.cpp',
+        'gserver/layers/DotMulOperator.cpp',
+        'gserver/layers/DotMulProjection.cpp',
+        'gserver/layers/SamplingIdLayer.cpp',
+        'gserver/layers/MDLstmLayer.cpp',
+        'gserver/layers/ResizeLayer.cpp',
+        'gserver/layers/TableProjection.cpp',
+        'gserver/layers/TensorLayer.cpp',
+        'gserver/layers/TransLayer.cpp',
+        'gserver/layers/TransposedFullMatrixProjection.cpp',
+        'gserver/layers/ValidationLayer.cpp',
+        'internals/gserver/gradientmachines/FpgaNeuralNetwork.cpp',
+        'internals/gserver/layers/FpgaDataLayer.cpp',
+        'internals/gserver/layers/FpgaFullyConnectedLayer.cpp',
+        'internals/gserver/gradientmachines/AsgdSparseGradientMachine.cpp',
+        'internals/gserver/gradientmachines/BatchGradientMachine.cpp',
+        'internals/gserver/dataproviders/CepstrumExtract.cpp',
+        'internals/gserver/dataproviders/ImageDataProvider.cpp' if not ONLYCPU and not NOPYTHON else '',
+        'internals/gserver/dataproviders/ImageExtract.cpp' if not ONLYCPU and not NOPYTHON else '',
+        'internals/gserver/dataproviders/LtrDataProvider.cpp',
+        'internals/gserver/dataproviders/SparseDataProvider.cpp',
+        'internals/gserver/dataproviders/SpeechDataProvider.cpp',
+        'internals/gserver/layers/CheckLayer.cpp',
+        'internals/gserver/layers/DataTrimLayer.cpp',
+        'internals/gserver/layers/FullContextLayer.cpp',
+        'internals/gserver/layers/PerturbationLayer.cpp' if not ONLYCPU else '',
+    ),
+        Depends(
+            'libpaddle_utils.a',
+            'libpaddle_math.a',
+            'libpaddle_parameter.a',
+            'libpaddle_internal_parameter.a',
+            'libpaddle_cuda.a' if not ONLYCPU else ''
+        )
+)
+
+def CopyPaddleLib(paddle_dir):
+    target_mkdir = 'mkdir_' + paddle_dir.replace('/', '__')
+    TARGET(target_mkdir,
+        ShellCommands(
+            'mkdir -p output/include/paddle/' + paddle_dir
+        ),
+        Depends('clean_paddle_h'),
+    )
+    files = os.listdir(paddle_dir)
+    if paddle_dir == 'proto':
+        for file in files:
+            if os.path.splitext(file)[1] == '.proto':
+                TARGET('copy_' + os.path.splitext(file)[0] + '.pb.h',
+                    ShellCommands(
+                        'cp ' + paddle_dir + '/' +
+                        os.path.splitext(file)[0] + '.pb.h output/include/paddle/' +
+                        paddle_dir + ' && echo \"#include \\"' + paddle_dir + '/' +
+                        file + '.pb.h\\"\" >> output/include/paddle/paddle.h'
+                    ),
+                    Depends(target_mkdir),
+                )
+    else:
+        for file in files:
+            if os.path.splitext(file)[1] == '.h':
+                TARGET('copy_' + file,
+                    ShellCommands(
+                        'cp ' + paddle_dir + '/' +
+                        file + ' output/include/paddle/' + paddle_dir +
+                        ' && echo \"#include \\"' + paddle_dir + '/' +
+                        file + '\\"\" >> output/include/paddle/paddle.h'
+                    ),
+                    Depends(target_mkdir),
+                )
+StaticLibrary('paddle_network',
+    Sources(
+        'pserver/LightNetwork.cpp',
+        'pserver/SocketChannel.cpp',
+        'pserver/ProtoServer.cpp',
+    ),
+    Depends('libpaddle_utils.a',
+        'libpaddle_math.a',
+        'libpaddle_parameter.a')
+)
+
+StaticLibrary('paddle_pserver2_lib',
+    Sources(
+        'pserver/BaseClient.cpp',
+        'pserver/ParameterClient2.cpp ',
+        'pserver/ParameterServer2.cpp ',
+        'pserver/SparseParameterDistribution.cpp ',
+    ),
+    Depends(
+            'libpaddle_utils.a',
+            'libpaddle_math.a',
+            'libpaddle_parameter.a',
+            'libpaddle_network.a'
+        ),
+)
+
+if ONLINE != True:
+    StaticLibrary('paddle_trainer_lib',
+        Sources(
+            'trainer/ParameterUpdater.cpp',
+            'trainer/RemoteParameterUpdater.cpp',
+            'trainer/ThreadParameterUpdater.cpp',
+            'trainer/Trainer.cpp',
+            'trainer/TrainerInternal.cpp',
+            'internals/owlqn/TrainerOWLQN.cpp',
+            'internals/owlqn/BatchRemoteParameterUpdater.cpp',
+            'trainer/Tester.cpp',
+            'trainer/ParamUtil.cpp',
+            'trainer/TrainerConfigHelper.cpp',
+            'trainer/TrainerInternalConfig.cpp',
+        ),
+        Depends(
+                'libpaddle_utils.a',
+                'libpaddle_math.a',
+                'libpaddle_parameter.a',
+                'libpaddle_grad_machine.a',
+                'libpaddle_metric_learning_lib.a'  if WITH_METRIC else '',
+                'libpaddle_pserver2_lib.a',
+                'libpaddle_dserver_lib.a' if WITH_METRIC else '',
+            ),
+    )
+
+#可执行文件
+
+Application('paddle_pserver2',
+    Sources(
+        'pserver/ParameterServer2Main.cpp',
+    ),
+    Depends(
+            'libpaddle_utils.a',
+            'libpaddle_math.a',
+            'libpaddle_parameter.a',
+            'libpaddle_grad_machine.a',
+            'libpaddle_pserver2_lib.a',
+        ),
+        Depends(PADDLE_LIBS),
+        LinkLibs(PADDLE_LIBS_FOR_LINK),
+        ENV.LinkLibs()
+)
+
+execfile('internals/COMAKE.include')
+
+if ONLINE != True:
+    Application('paddle_trainer',
+        Sources(
+            'trainer/TrainerMain.cpp',
+        ),
+        Depends(
+            'libpaddle_trainer_lib.a',
+            'libpaddle_pserver2_lib.a',
+            'libpaddle_dserver_lib.a' if WITH_METRIC else '',
+            'libpaddle_metric_learning_lib.a' if WITH_METRIC else ''
+        ),
+        Depends(PADDLE_LIBS),
+        LinkLibs(PADDLE_LIBS_FOR_LINK),
+        ENV.LinkLibs()
+    )
+
+    Application('paddle_merge_model',
+        Sources(
+            'trainer/MergeModel.cpp',
+            Depends(
+                PADDLE_LIBS,
+            ),
+        ),
+        LinkLibs(PADDLE_LIBS_FOR_LINK),
+        ENV.LinkLibs(),
+    )
+
+    Application('paddle_gen_sequence',
+        Sources(
+            'internals/trainer/GenerateSequence.cpp',
+            Depends(
+                PADDLE_LIBS,
+            ),
+        ),
+        LinkLibs(PADDLE_LIBS_FOR_LINK),
+        ENV.LinkLibs(),
+    )
+
+    Application('paddle_gen_answer',
+        Sources(
+            'internals/trainer/GenerateAnswer.cpp',
+            Depends(
+                PADDLE_LIBS,
+            ),
+        ),
+        LinkLibs(PADDLE_LIBS_FOR_LINK),
+        ENV.LinkLibs(),
+    )
+
+if WITH_STYLECHECK:
+    # paddle style check.
+    TARGET(
+        'cpplint.done',
+        ShellCommands(
+          'sh internals/auto_codestyle.sh check',
+          'touch cpplint.done'
+        ),
+        Depends(PADDLE_LIBS)
+    )
+
+
+
+# Meger Libraries
+
+def MergeLib(libs):
+    extract_libs = []
+    for lib in libs.split(' '):
+        extract_libs.append('extract_' + lib)
+        TARGET('extract_' + lib,
+            ShellCommands(
+                'ar x ' + lib
+            ),
+            Depends(lib)
+        )
+    TARGET('merge_libs',
+        ShellCommands(
+            'rm -f libpaddle_lib.a && '
+            'ar crs libpaddle_lib.a *.o && '
+            'cp libpaddle_lib.a output/lib/ && '
+            'rm -f *.o'
+        ),
+        CleanCommands(
+            'rm -f libpaddle_lib.a && rm -rf output/*'
+        ),
+        Depends(' '.join(extract_libs))
+    )
+
+MergeLib(PADDLE_LIBS)
+
+
+TARGET('clean_paddle_h',
+       ShellCommands(
+           'rm -f output/include/paddle/paddle.h',
+           'mkdir -p output/include/paddle',
+           'echo "#pragma once" > output/include/paddle/paddle.h',
+       )
+)
+
+
+Directory('math/tests', Depends(PADDLE_LIBS))
+Directory('utils/tests', Depends(PADDLE_LIBS))
+Directory('parameter/tests', Depends(PADDLE_LIBS))
+if ONLINE != True:
+    Directory('trainer/tests', Depends(PADDLE_LIBS))
+    Directory('gserver/tests', Depends(PADDLE_LIBS))
+    Directory('internals/gserver/tests', Depends(PADDLE_LIBS))
+Directory('pserver/test', Depends(PADDLE_LIBS))
+
+
+CopyPaddleLib('math')
+CopyPaddleLib('gserver')
+CopyPaddleLib('pserver')
+CopyPaddleLib('proto')
+CopyPaddleLib('trainer')
+CopyPaddleLib('internals/gserver')
+
+CopyPaddleLib('cuda/include')
+
+
+TARGET('copy_conf_files',
+    ShellCommands(
+        'mkdir -p output/conf',
+        'cp -f internals/deprecated/conf/*.conf output/conf/'
+    ),
+    CleanCommands(
+        'rm -rf output/conf'
+    ),
+)
+
+def run_generate_python_api(libs, libs_for_link, py_cflags, highgcc, pyhome, pyver):
+  import Environment
+  import SyntaxTag
+  import copy
+  env = Environment.GetCurrent()
+  ldflags = copy.deepcopy(env.LinkFlags())
+  dynamic_link_tags = SyntaxTag.TagLinkLibs()
+  dynamic_link_tags.AddV('-rdynamic')
+  ldflags -= dynamic_link_tags
+  StaticLibrary("paddle_api",
+    Sources(
+        "api/Util.cpp",
+        "api/Trainer.cpp",
+        "api/Matrix.cpp",
+        "api/Vector.cpp",
+        "api/Arguments.cpp",
+        "api/GradientMachine.cpp",
+        "api/ConfigParser.cpp",
+        "api/Parameter.cpp",
+        "api/SequenceGenerator.cpp",
+        "api/ParameterOptimizer.cpp"
+    ),
+    Depends(libs),
+    Libraries(libs)
+  )
+
+  with open('.py_paddle_extra_link_flags', 'w') as f:
+    print >>f, " ".join(['''-lpaddle_api''',
+      libs_for_link,
+      " ".join(ldflags.V()),
+      " ".join(env.LinkLibs().V())])
+
+  python_cmd="python"
+  if highgcc:
+      python_cmd="%s/bin/python%s"%(pyhome, pyver)
+
+  TARGET("setup_script",
+    ShellCommands("sed 's/%s/%s/g' setup.py.in > setup.py" \
+      % ("@PADDLE_VERSION@", PADDLE_VERSION)),
+    CleanCommands("rm setup.py"),
+    Depends('setup.py.in')
+  )
+
+  TARGET('generate_python_api',
+    ShellCommands('swig -python -c++ -outcurrentdir -I../ api/Paddle.swig',
+      "mv swig_paddle.py py_paddle",
+      "which %s"%python_cmd,
+      "%s setup.py bdist_wheel"%python_cmd,
+      "rm -f Paddle_wrap.cxx Paddle_wrap.h Paddle_wrap.o",
+      "rm build py_paddle.egg-info -rf"
+    ),
+    CleanCommands(
+      "rm -rf paddle.py paddle.pyc _paddle.so dist"
+    ),
+    Depends("libpaddle_api.a", "paddle_trainer", "setup_script")
+  )
+
+if WITH_SWIG:
+  run_generate_python_api(PADDLE_LIBS, PADDLE_LIBS_FOR_LINK, PYTHON_CFLAGS,
+    HIGH_VERSION_GCC, python_home, python_version)

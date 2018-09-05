@@ -1,0 +1,44 @@
+#!/bin/bash
+
+function usage(){
+        echo "usage: paddle [--help] [<args>]"
+        echo "    train             start local train"
+        echo "    cluster_train     start cluster train"
+        echo "    cluster_kill      start cluster kill one job"
+        echo "    merge_model       Start a paddle_merge_model"
+        echo "    pserver           Start a paddle_pserver_main"
+        echo "    version           Print paddle version"
+        echo "    dump_config       Dump the trainer config as proto string"
+        echo "    make_diagram      Make Diagram using Graphviz"
+        echo ""
+        echo "'paddle train --help' 'paddle cluster_train --help', 'paddle pserver --help', list more detailed usage of each command"
+}
+
+MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+case "$1" in
+    "cluster_train")
+        if [ -z "`which cluster_train.sh`" ]; then
+          echo "Using jumbo install paddle_platform to install platform client"
+          exit 0
+        fi
+        cluster_train.sh ${@:2}
+        ;;
+    "cluster_kill")
+        if [ -z "`which cluster_kill.sh`" ]; then
+          echo "Using jumbo install paddle_platform to install platform client"
+          exit 0
+        fi
+        cluster_kill.sh ${@:2}
+        ;;
+    "train" | "merge_model" | "pserver" | "dump_config" | "make_diagram" | "version")
+        if [ -z "`which paddle_local`" ]; then
+          echo "Using jumbo install paddle to install local train"
+          exit 0
+        fi
+        paddle_local ${@:1}
+        ;;
+    *)
+        usage
+        ;;
+ esac

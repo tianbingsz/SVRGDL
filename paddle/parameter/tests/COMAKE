@@ -1,0 +1,26 @@
+#edit-mode: -*- python -*-
+
+WORKROOT('../../../../..')
+
+CopyUsingHardLink(True)
+
+PADDLE_ROOT = '../../'
+execfile('../../common_COMAKE')
+
+INCPATHS(' '.join([
+    '../..',
+    '%s/include/python%s' % (python_home, python_version),
+    '%s/include/numpy' % numpy_home,
+    '%s/include' % cuda_home]))
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../..")
+
+Application('test_common',
+    Sources(
+        'test_common.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    Libraries(PADDLE_LIBS),
+)

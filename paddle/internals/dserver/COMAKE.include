@@ -1,0 +1,34 @@
+# *-* edit-mode: python *-*
+
+StaticLibrary('paddle_dserver_lib',
+    Sources(
+        'pserver/BaseClient.cpp',
+        'internals/dserver/DataClient.cpp ',
+        'internals/dserver/DataServer.cpp ',
+    ),
+    Depends(
+            'libpaddle_parameter.a',
+            'libpaddle_math.a',
+            'libpaddle_utils.a',
+            'libpaddle_network.a'
+        ),
+)
+
+Application('paddle_dserver',
+    Sources(
+      'internals/dserver/DataServerMain.cpp',
+    ),
+    Depends(
+      'libpaddle_parameter.a',
+      'libpaddle_math.a',
+      'libpaddle_utils.a',
+      'libpaddle_dserver_lib.a',
+    ),
+      Depends(PADDLE_LIBS),
+              LinkLibs(PADDLE_LIBS_FOR_LINK),
+              ENV.LinkLibs()
+)
+
+CopyPaddleLib('internals/dserver')
+
+

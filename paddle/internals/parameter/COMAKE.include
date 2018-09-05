@@ -1,0 +1,19 @@
+# *-* edit-mode: python *-*
+def filter_file(callback):
+    import inspect
+    filename = inspect.getframeinfo(inspect.currentframe()).filename
+    path = os.path.dirname(os.path.abspath(filename))
+    _, _, filename = os.walk(path).next()
+    return map(lambda x: "internals/parameter/"+x, filter(callback, filename))
+
+__srcs__ = filter_file(lambda x: x.endswith('.cpp'))
+
+StaticLibrary('paddle_internal_parameter',
+   Sources(
+     *__srcs__
+   ),
+   Depends('libpaddle_proto.a'),
+)
+
+del __srcs__
+del filter_file

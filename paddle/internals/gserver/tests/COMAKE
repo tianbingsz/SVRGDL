@@ -1,0 +1,36 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#¹¤×÷Â·¾¶.
+WORKROOT('../../../../../..')
+
+#Ê¹ÓÃÓ²Á´½Ócopy.
+CopyUsingHardLink(True)
+PADDLE_ROOT='../../../'
+execfile('../../../common_COMAKE')
+
+#Í·ÎÄ¼þÂ·¾¶.
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../../..")
+Application('test_FullContextLayer',
+    Sources(
+        'test_FullContextLayer.cpp',
+        '../../../gserver/tests/TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_SelectiveFCLayer',
+    Sources(
+        'test_SelectiveFCLayer.cpp',
+        '../../../gserver/tests/TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+

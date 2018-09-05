@@ -1,0 +1,98 @@
+# *-* edit-mode: python *-*
+
+def __get_depend_files__(nvcc_file):
+    env = Environment.GetCurrent()
+    incpaths   = env.IncludePaths().V()
+    incpaths_s = env._line_delim.join(map(lambda x:"-I%s"%x,incpaths))
+    cxxflags   = env.CxxFlags().V()
+    cxxflags_s = env._line_delim.join(cxxflags)
+    func_name = '[Action:GetCPPDependFiles]'
+    log = env.LogSystem()
+    command = '%s -MG -MM ' % env.Cxx() + incpaths_s + ' ' + cxxflags_s + ' -x c++ ' + nvcc_file
+    (status,output,err) = log.LogNoticeWithCC(
+        '%s[cmd:%s]'%(func_name,Function.ShortenWord(command)),command)
+    line = ' '.join(string.split(output,'\\\n'))
+    depfiles = ' '.join(string.split(string.split(line,':')[1]))
+    return depfiles
+
+def __compile_nvcc_file__(nvcc_file, nvcc_flags, cuda_nvcc):
+    nvcc_file = 'cuda/'+nvcc_file
+    global __get_depend_files__
+    base = nvcc_file[ : nvcc_file.rfind('.cu')]
+    depfiles = __get_depend_files__(nvcc_file)
+    TARGET(
+        base + '.o',
+        Depends(depfiles),
+        ShellCommands('%s/bin/nvcc ' % cuda_nvcc
+            + ' -c $(INCPATH) $(CPPFLAGS) $(DEP_INCPATH) '
+            + nvcc_flags
+            + nvcc_file
+            + ' -o ' + base + '.o'))
+
+def __compile_cxx_file__(cxx_file, extra_flags):
+    cxx_file = 'cuda/'+cxx_file
+    global __get_depend_files__
+    env = Environment.GetCurrent()
+    base = cxx_file[ : cxx_file.rfind('.cc')]
+    depfiles = __get_depend_files__(cxx_file)
+    TARGET(
+        base + '.o',
+        Depends(depfiles),
+        ShellCommands('%s ' % env.Cxx() 
+            + ' -c $(INCPATH) $(CPPFLAGS)  $(DEP_INCPATH) '
+            + ' $(CXXFLAGS) ' + extra_flags
+            + cxx_file
+            + ' -o ' + base + '.o'))
+
+
+if not ONLYCPU:
+    __compile_cxx_file__('src/hl_time.cc', '')
+    __compile_cxx_file__('src/hl_dso_loader.cc', '')
+    __compile_cxx_file__('src/hl_cudart_wrap.cc', '')
+    __compile_cxx_file__('src/hl_cuda_cublas.cc', ' -D__NVCC__ ')
+    __compile_cxx_file__('src/hl_cuda_cudnn.cc',  ' -D__NVCC__ ')
+    __compile_cxx_file__('src/hl_cuda_device.cc', ' -D__NVCC__ ')
+    __compile_nvcc_file__('src/hl_perturbation_util.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_aggregate.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_matrix.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_sparse.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_sequence.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_cnn.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_cuda_lstm.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_table_apply.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_top_k.cu', NVCCFLAGS, cuda_home)
+    __compile_nvcc_file__('src/hl_batch_transpose.cu', NVCCFLAGS, cuda_home)
+    
+__srcs__ = [
+    'src/hl_math.cc',
+    'src/hl_cpu_functions.cc',
+    'src/hl_avx_functions.cc',
+    ]
+
+if not ONLYCPU:
+    __srcs__.extend([
+        'src/hl_table_apply.o',
+        'src/hl_top_k.o',
+        'src/hl_cuda_device.o',
+        'src/hl_cuda_cublas.o',
+        'src/hl_cuda_cudnn.o',
+        'src/hl_cuda_sparse.o',
+        'src/hl_cuda_sequence.o',
+        'src/hl_cuda_lstm.o',
+        'src/hl_cuda_cnn.o',
+        'src/hl_cuda_aggregate.o',
+        'src/hl_cuda_matrix.o',
+        'src/hl_batch_transpose.o',
+        'src/hl_time.o',
+        'src/hl_dso_loader.o',
+        'src/hl_cudart_wrap.o',
+        'src/hl_perturbation_util.o'
+        ])
+
+StaticLibrary('paddle_cuda',
+    Sources(*(map(lambda x: "cuda/"+x, __srcs__)+
+        [ENV.CxxFlags()+CxxFlags('-mavx')])  # paddle_cuda(hppl) will always compile avx code.
+                                             # but paddle won't use avx method when NOAVX
+    )
+)
+

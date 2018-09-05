@@ -1,0 +1,98 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#工作路径.
+WORKROOT('../../../../..')
+
+#使用硬链接copy.
+CopyUsingHardLink(True)
+
+PADDLE_ROOT = '../../'
+execfile('../../common_COMAKE')
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../..")
+
+
+Application('test_Prediction',
+    Sources(
+        'test_Prediction.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_Trainer',
+    Sources(
+        'test_Trainer.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_Compare',
+    Sources(
+       'test_Compare.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_TrainerOnePass',
+    Sources(
+       'test_TrainerOnePass.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_CompareTwoNets',
+    Sources(
+       'test_CompareTwoNets.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_CompareTwoOpts',
+    Sources(
+       'test_CompareTwoOpts.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_CompareSparse',
+    Sources(
+       'test_CompareSparse.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_recurrent_machine_generation',
+    Sources(
+       'test_recurrent_machine_generation.cpp',
+       Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+
+Application('test_PyDataProviderWrapper',
+    Sources(
+        'test_PyDataProviderWrapper.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)

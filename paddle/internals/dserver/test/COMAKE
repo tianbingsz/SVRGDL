@@ -1,0 +1,25 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#工作路径.
+WORKROOT('../../../../../..')
+
+#使用硬链接copy.
+CopyUsingHardLink(True)
+PADDLE_ROOT='../../../'
+execfile('../../../common_COMAKE')
+
+#头文件路径.
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../../..")
+
+Application('test_DataServer',
+    Sources(
+        'test_DataServer.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs()
+)

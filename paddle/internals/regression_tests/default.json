@@ -1,0 +1,19 @@
+{
+    "paddle" : {
+        "useGPU": true,
+        "paddleCommand": "paddle train",
+        "printStderr": true,
+        "numPasses": 20,
+        "testPass": 0,
+        "dotPeriod": 100,
+        "logPeriod": 100,
+        "logtoStdErr": "0",
+        "testAllDataInOnePeriod": true,
+        "testPeriod": 0,
+        "logdir": "./regression_tests/logs"
+    },
+    "plot" : {
+        "toPlot": true,
+        "plotOutput": "plot.png"
+    }
+}

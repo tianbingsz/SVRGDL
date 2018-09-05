@@ -1,0 +1,116 @@
+#edit-mode: -*- python -*-
+#coding:gbk
+
+#工作路径.
+WORKROOT('../../../../..')
+
+#使用硬链接copy.
+CopyUsingHardLink(True)
+
+PADDLE_ROOT = '../../'
+execfile('../../common_COMAKE')
+
+#头文件路径.
+
+CONFIGS('com/btest/gtest@base')
+
+ImportConfigsFrom("../..")
+
+Application('test_ProtoDataProvider',
+    Sources(
+        'test_ProtoDataProvider.cpp',
+        'TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_LayerGrad',
+    Sources(
+        'test_LayerGrad.cpp',
+        'LayerGradUtil.cpp',
+        'TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_Evaluator',
+    Sources(
+        'test_Evaluator.cpp',
+        'TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_LinearChainCRF',
+    Sources(
+        'test_LinearChainCRF.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    Libraries(PADDLE_LIBS),
+)
+
+INCPATHS("-I ../../gserver")
+
+Application('test_MultinomialSampler',
+    Sources(
+        'test_MultinomialSampler.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    Libraries(PADDLE_LIBS),
+)
+
+if not NOPYTHON:
+  Application('test_PyDataProvider',
+    Sources(
+      'test_PyDataProvider.cpp',
+      'TestUtil.cpp',
+      Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+  )
+
+Application('test_RecurrentLayer',
+    Sources(
+        'test_RecurrentLayer.cpp',
+        'TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+
+Application('test_RecurrentGradientMachine',
+    Sources(
+        'test_RecurrentGradientMachine.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_NetworkCompare',
+    Sources(
+        'test_NetworkCompare.cpp',
+        'TestUtil.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)
+
+Application('test_PyDataProvider2',
+    Sources(
+        'test_PyDataProvider2.cpp',
+        Depends(PADDLE_LIBS),
+    ),
+    LinkLibs(PADDLE_LIBS_FOR_LINK),
+    ENV.LinkLibs(),
+)

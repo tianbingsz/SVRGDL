@@ -1,0 +1,25 @@
+def filter_file(callback):
+    import inspect
+    filename = inspect.getframeinfo(inspect.currentframe()).filename
+    path = os.path.dirname(os.path.abspath(filename))
+    _, _, filename = os.walk(path).next()
+    return filter(callback, filename)
+
+
+__srcs__ = map(lambda x: "utils/"+x, 
+    filter_file(lambda x: x.endswith(".cpp")))
+
+__srcs__.extend(
+    map(lambda x: Depends('utils/'+x), 
+        filter_file(lambda x: x.endswith(".h")))
+)
+
+StaticLibrary('paddle_utils',
+    Sources(
+        *__srcs__
+    ),
+   Depends('libpaddle_proto.a')
+)
+
+del filter_file  # remove symbols
+del __srcs__
