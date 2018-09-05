@@ -13,7 +13,6 @@ Trainer, Parameter Server and so on. The preliminary results are encouraging.
 For Multi-layer perceptons (MLP), the training is improved with sample efficiency 
 and higher accuracy. The testing accuracy is improved marginally. Further work is to investigate 
 the variance reduction impacts on large scale training of industrial models such as ResNet.
-We also need to optimize the systems implementation such as distributed training, parameter server and so on.
 
 ## Updated or Newly added Code based on Paddle
 * paddle/gserver/gradientmachines/GradientMachine.h, paddle/gserver/gradientmachines/MultiGradientMachine.cpp
