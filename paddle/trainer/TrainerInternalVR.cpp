@@ -65,7 +65,6 @@ void TrainerInternalVR::calcGradOneBatch(int64_t batchId,
   std::vector<Argument> outArgs;
   const std::vector<Argument>& inArgs = dataBatch.getStreams();
 
-  // todo, delete
   std::vector<ParaStat> paraStats;
   paraStats.resize(gradientMachine_->getParameters().size());
   UpdateCallback updateCallback =
@@ -103,7 +102,6 @@ void TrainerInternalVR::trainOneBatch(int64_t batchId,
     return;
   }
 
-  // todo, delete
   std::vector<ParaStat> paraStats;
   paraStats.resize(gradientMachine_->getParameters().size());
 
@@ -131,12 +129,11 @@ void TrainerInternalVR::trainOneBatch(int64_t batchId,
     // \partial f_b(w_s)
     gradientMachine_->forwardBackward(
             inArgs, &outArgs, passType, nullptr);
-    // g = - \partial f_b(w_s)
     negGradients();
 
     // w <- w_t, P_VALUE -> P_SNAPSHOT_VALUE
     swapParameter();  // SNAPSHOT <-> VALUE
-    // g = \prtial f_b(w_t) - \partial f_b(w_s)
+    // g = \partial f_b(w_t) - \partial f_b(w_s)
     gradientMachine_->forwardBackward(
             inArgs, &outArgs, passType, updateCallback);
 
@@ -184,7 +181,6 @@ void TrainerInternalVR::trainOneBatch(int64_t batchId,
   }
 }
 
-// P_VALUE <---> P_SNAPSHOT_VALUE
 void TrainerInternalVR::swapParameter() {
   auto& parameters = gradientMachine_->getParameters();
   for (auto& para : parameters) {
@@ -193,7 +189,6 @@ void TrainerInternalVR::swapParameter() {
   }
 }
 
-// copy fromType parameter (val) to toType
 void TrainerInternalVR::copyParameter(ParameterType fromType,
                                       ParameterType toType) {
   if (fromType == toType) {
@@ -205,7 +200,6 @@ void TrainerInternalVR::copyParameter(ParameterType fromType,
   }
 }
 
-// grad = - grad
 void TrainerInternalVR::negGradients() {
   auto& parameters = gradientMachine_->getParameters();
   for (auto& para : parameters) {
@@ -213,7 +207,6 @@ void TrainerInternalVR::negGradients() {
   }
 }
 
-// grad_sum = 0 or grad = 0
 void TrainerInternalVR::clearGradients(ParameterType parameterType) {
   auto& parameters = gradientMachine_->getParameters();
   for (auto& para : parameters) {
