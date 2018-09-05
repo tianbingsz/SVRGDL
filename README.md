@@ -15,8 +15,8 @@ and higher accuracy. The testing accuracy is improved marginally. Further work i
 the variance reduction impacts on large scale training of industrial models such as ResNet.
 We also need to optimize the systems implementation such as distributed training, parameter server and so on.
 
-## Update or New added Code based on Paddle
-* paddle/gserver/gradientmachines, paddle/gserver/gradientmachines/MultiGradientMachine.cpp
+## Updated or Newly added Code based on Paddle
+* paddle/gserver/gradientmachines/GradientMachine.h, paddle/gserver/gradientmachines/MultiGradientMachine.cpp
 
 * paddle/math/BaseMatrix.cu, paddle/math/BaseMatrix.h
 
