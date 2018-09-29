@@ -14,7 +14,7 @@ for Multi-layer perceptons (MLP), the training improved with greater sample effi
 and higher accuracy and the testing accuracy has improved marginally. Further work is needed to investigate 
 the variance reduction impacts on large scale training of industrial models such as ResNet.
 
-## Updated or Newly added Code based on Deep Learning Framework Paddle
+## Updated or Newly added Code based on Deep Learning Framework
 * paddle/gserver/gradientmachines/GradientMachine.h, paddle/gserver/gradientmachines/MultiGradientMachine.cpp
 
 * paddle/math/BaseMatrix.cu, paddle/math/BaseMatrix.h
